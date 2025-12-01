@@ -20,7 +20,7 @@ for folder in [OUTPUT_FOLDER, TEMP_AUDIO, SFX_FOLDER]:
         os.makedirs(folder)
 
 st.set_page_config(page_title="Flatland Studio", layout="wide")
-st.title("Flatland Sitcom Generator (Diagnostic Mode)")
+st.title("Flatland Sitcom Generator (Final Fix)")
 
 # 2. INPUT
 default_script = """BARRY: Test line one.
@@ -30,19 +30,19 @@ CARL: Test line two.
 user_input = st.text_area("Script Input", value=default_script, height=200)
 
 def cleanup_temp_files():
-    # Clean audio
     if os.path.exists(TEMP_AUDIO):
         files = glob.glob(os.path.join(TEMP_AUDIO, "*.wav"))
         for f in files:
             try: os.remove(f)
             except: pass
     
-    # Clean previous partial videos
-    video_search = os.path.join(PROJECT_ROOT, "media", "**", "*.mp4")
-    old_videos = glob.glob(video_search, recursive=True)
-    for v in old_videos:
-        try: os.remove(v)
-        except: pass
+    # Aggressive cleanup of old videos to ensure we don't play an old cached one
+    for pattern in ["**/*.mp4"]:
+        files = glob.glob(os.path.join(PROJECT_ROOT, pattern), recursive=True)
+        for f in files:
+            if "completed_videos" not in f: # Don't delete our saved history
+                try: os.remove(f)
+                except: pass
 
 # 3. ACTION
 if st.button("ACTION! (Render Video)"):
@@ -65,63 +65,50 @@ if st.button("ACTION! (Render Video)"):
     with open("temp_script.json", "w") as f:
         json.dump(script_data, f)
 
-    # 2. Verify engine.py exists
-    if not os.path.exists(os.path.join(PROJECT_ROOT, "engine.py")):
-        st.error(f"CRITICAL: engine.py not found in {PROJECT_ROOT}")
-        st.stop()
-
-    # 3. Execution with Real-Time Logging
+    # 2. Execution
     st.info("Step 2: Starting Manim Engine...")
     
     log_container = st.empty()
-    logs = []
     
-    # We use -v INFO to make sure Manim talks to us
+    # Using the exact command that worked in your logs
     command = f"manim -pql --media_dir \"{PROJECT_ROOT}\" -v INFO --disable_caching engine.py FlatlandEpisode"
     
-    # Start the process non-blocking
     process = subprocess.Popen(
         command, 
         shell=True, 
         stdout=subprocess.PIPE, 
-        stderr=subprocess.STDOUT, # Merge errors into standard output
+        stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
         universal_newlines=True
     )
     
-    # Read output line by line
-    st.markdown("### 📜 Real-Time Execution Logs:")
     console_box = st.code("Initializing...", language="bash")
-    
     full_log_text = ""
     
     while True:
-        # Read a line
         line = process.stdout.readline()
         if not line and process.poll() is not None:
             break
-            
         if line:
-            # Clean up line
             line = line.strip()
             if line:
                 full_log_text += line + "\n"
-                # Update the UI with the last 20 lines to keep it readable
                 display_log = "\n".join(full_log_text.splitlines()[-20:])
                 console_box.code(display_log, language="bash")
 
-    # 4. Final Check
+    # 3. Finding the Video (IMPROVED SEARCH)
     if process.returncode == 0:
         st.success("Render process finished.")
         
-        # Look for the video
-        # Note: Manim puts videos in /media/videos/engine/480p15/FlatlandEpisode.mp4 usually
-        search_path = os.path.join(PROJECT_ROOT, "media", "**", "*.mp4")
-        files = glob.glob(search_path, recursive=True)
+        # Search EVERYWHERE for the MP4
+        files = glob.glob(os.path.join(PROJECT_ROOT, "**", "*.mp4"), recursive=True)
         
-        if files:
-            newest_file = max(files, key=os.path.getmtime)
+        # Filter out the one we just made
+        valid_files = [f for f in files if "FlatlandEpisode" in f and "partial" not in f]
+        
+        if valid_files:
+            newest_file = max(valid_files, key=os.path.getmtime)
             timestamp = int(time.time())
             final_filename = f"Sitcom_Episode_{timestamp}.mp4"
             final_path = os.path.join(OUTPUT_FOLDER, final_filename)
@@ -135,10 +122,9 @@ if st.button("ACTION! (Render Video)"):
                 st.error(f"Failed to copy video: {e}")
                 st.video(newest_file)
         else:
-            st.warning("Process finished 0, but no MP4 found. Check the full logs below.")
-            with st.expander("Full Execution Log"):
-                st.text(full_log_text)
+            st.error("Manim finished, but I couldn't find 'FlatlandEpisode.mp4'.")
+            st.warning("Debugging info - Files found in folder:")
+            st.write(files)
     else:
         st.error("RENDER CRASHED.")
-        st.write("Full crash log:")
         st.code(full_log_text)
