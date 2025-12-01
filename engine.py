@@ -1,4 +1,4 @@
-# engine.py (SMART VERSION)
+# engine.py (FLATOPIA EDITION)
 from manim import *
 import pyttsx3
 import json
@@ -14,124 +14,118 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_DIR = os.path.join(BASE_DIR, "temp_audio")
 SFX_DIR = os.path.join(BASE_DIR, "sfx")
 
+# We no longer need a 'backgrounds' folder!
 def setup_directories():
-    if not os.path.exists(AUDIO_DIR): os.makedirs(AUDIO_DIR)
-    if not os.path.exists(SFX_DIR): os.makedirs(SFX_DIR)
+    for d in [AUDIO_DIR, SFX_DIR]:
+        if not os.path.exists(d): os.makedirs(d)
 
 setup_directories()
 
 # ==========================================
-# 1. ROBUST DOWNLOADER + FALLBACK
+# 1. SFX HANDLER (Robust)
 # ==========================================
 def generate_fallback_sfx(filepath, phrase):
     try:
-        aux_engine = pyttsx3.init()
-        aux_engine.setProperty('rate', 200) 
-        aux_engine.save_to_file(phrase, filepath)
-        aux_engine.runAndWait()
-        del aux_engine
+        aux = pyttsx3.init()
+        aux.setProperty('rate', 200) 
+        aux.save_to_file(phrase, filepath)
+        aux.runAndWait()
     except: pass
 
-def download_file(url, filepath, fallback_phrase):
+def download_file(url, filepath, fallback_phrase=None):
     opener = urllib.request.build_opener()
     opener.addheaders = [('User-Agent', 'Mozilla/5.0')]
     urllib.request.install_opener(opener)
     try:
-        print(f"[SETUP] Downloading SFX: {filepath}")
+        print(f"[SETUP] Downloading SFX: {os.path.basename(filepath)}")
         urllib.request.urlretrieve(url, filepath)
         return True
     except:
-        generate_fallback_sfx(filepath, fallback_phrase)
+        if fallback_phrase: generate_fallback_sfx(filepath, fallback_phrase)
         return False
 
 def ensure_sfx_exist():
-    assets = {
+    # Only downloading sounds now, no images
+    sfx_assets = {
         "laugh.wav": ("https://upload.wikimedia.org/wikipedia/commons/transcoded/e/ee/Laugh_track_-_Audience_laughter.ogg/Laugh_track_-_Audience_laughter.ogg.mp3", "Hahahaha."), 
         "boo.wav": ("https://upload.wikimedia.org/wikipedia/commons/transcoded/3/3b/Crowd_Boo.wav/Crowd_Boo.wav.mp3", "Booooo."),
         "clap.wav": ("https://upload.wikimedia.org/wikipedia/commons/transcoded/6/62/Applause_-_enthusiastic.ogg/Applause_-_enthusiastic.ogg.mp3", "Clap clap clap."),
         "cricket.wav": ("https://upload.wikimedia.org/wikipedia/commons/transcoded/e/e9/Crickets_chirping.ogg/Crickets_chirping.ogg.mp3", "Chirp.")
     }
-    for filename, (url, phrase) in assets.items():
+    for filename, (url, phrase) in sfx_assets.items():
         filepath = os.path.join(SFX_DIR, filename)
         if not os.path.exists(filepath) or os.path.getsize(filepath) < 1000:
             download_file(url, filepath, phrase)
 
 # ==========================================
-# 2. AUDIO PRE-GENERATION
+# 2. VOICE PRE-RENDER
 # ==========================================
 def pre_render_voice_lines():
     print("[SETUP] Pre-rendering voice lines...")
     try:
         with open("temp_script.json", "r") as f:
-            script_data = json.load(f)
-            
+            data = json.load(f)
         engine = pyttsx3.init()
         engine.setProperty('rate', 165)
         voices = engine.getProperty('voices')
         
-        for i, item in enumerate(script_data):
+        for i, item in enumerate(data):
             text = item["text"]
             speaker = item["speaker"].upper()
+            if text.startswith("["): continue 
             
-            # Skip special tags
-            if text.startswith("[") and text.endswith("]"): continue
-                
-            audio_path = os.path.join(AUDIO_DIR, f"line_{i}.wav")
-            
-            if "CARL" in speaker and len(voices) > 1:
-                engine.setProperty('voice', voices[1].id)
-            else:
-                engine.setProperty('voice', voices[0].id)
-                
-            engine.save_to_file(text, audio_path)
+            path = os.path.join(AUDIO_DIR, f"line_{i}.wav")
+            if "CARL" in speaker and len(voices) > 1: engine.setProperty('voice', voices[1].id)
+            else: engine.setProperty('voice', voices[0].id)
+            engine.save_to_file(text, path)
             
         engine.runAndWait()
         print("[SETUP] Audio complete.")
-        return True
-    except:
-        return False
+    except: pass
 
 ensure_sfx_exist()
 pre_render_voice_lines()
 
 # ==========================================
-# 3. THE SHAPE FACTORY (NEW!)
+# 3. HELPER FUNCTIONS
 # ==========================================
-def get_manim_color(color_name):
-    # Default to WHITE if color not found
-    try:
-        return getattr(sys.modules["manim"], color_name.upper())
-    except:
-        return WHITE
+def get_manim_color(name):
+    # Try to find the color in Manim's library, else default to White
+    try: return getattr(sys.modules["manim"], name.upper())
+    except: return WHITE
 
-def create_actor_shape(shape_name, color_name):
-    """Builds a VGroup based on text input"""
-    color = get_manim_color(color_name)
-    shape_name = shape_name.upper()
+def create_actor(shape_name, color_name):
+    c = get_manim_color(color_name)
+    s = shape_name.upper()
+    if s == "CIRCLE": body = Circle(color=c, fill_opacity=1).scale(1.5)
+    elif s == "TRIANGLE": body = Triangle(color=c, fill_opacity=1).scale(2.0).shift(DOWN*0.3)
+    elif s == "STAR": body = Star(color=c, fill_opacity=1).scale(1.8)
+    elif s == "HEXAGON": body = RegularPolygon(n=6, color=c, fill_opacity=1).scale(1.5)
+    else: body = Square(color=c, fill_opacity=1).scale(1.5)
 
-    # Define the body
-    if shape_name == "CIRCLE":
-        body = Circle(color=color, fill_opacity=1).scale(1.5)
-    elif shape_name == "TRIANGLE":
-        body = Triangle(color=color, fill_opacity=1).scale(2.0).shift(DOWN*0.3)
-    elif shape_name == "STAR":
-        body = Star(color=color, fill_opacity=1).scale(1.8)
-    elif shape_name == "HEXAGON":
-        body = RegularPolygon(n=6, color=color, fill_opacity=1).scale(1.5)
-    else: # Default to SQUARE
-        body = Square(color=color, fill_opacity=1).scale(1.5)
-
-    # Eyes (Positioned generically to fit most shapes)
+    # Eyes
     eye_l = Circle(color=WHITE, fill_opacity=1, radius=0.3).shift(UP*0.4 + LEFT*0.4)
     eye_r = Circle(color=WHITE, fill_opacity=1, radius=0.3).shift(UP*0.4 + RIGHT*0.4)
     pupil_l = Dot(color=BLACK, radius=0.12).shift(UP*0.4 + LEFT*0.4)
     pupil_r = Dot(color=BLACK, radius=0.12).shift(UP*0.4 + RIGHT*0.4)
-
     return VGroup(body, eye_l, eye_r, pupil_l, pupil_r)
 
 # ==========================================
-# 4. MAIN SCENE
+# 4. THE FLATOPIA SCENE PALETTE
 # ==========================================
+# Map your scene names to Manim Colors here
+SCENE_PALETTE = {
+    "OFFICE": GREY,
+    "PARK": GREEN_D,     # Darker green for contrast
+    "FOREST": GREEN_E,   # Even darker green
+    "HOUSE": LIGHT_GREY, # Pure WHITE might hide the eyes, so we use Light Grey
+    "WHITE": WHITE,
+    "SPACE": BLACK,
+    "VOID": BLACK,
+    "HELL": RED_E,
+    "SKY": BLUE_C
+}
+
 SFX_MAP = {
     "LAUGH": (os.path.join(SFX_DIR, "laugh.wav"), 4),
     "BOO": (os.path.join(SFX_DIR, "boo.wav"), 3),
@@ -142,60 +136,67 @@ SFX_MAP = {
 
 class FlatlandEpisode(MovingCameraScene):
     def construct(self):
-        self.camera.background_color = "#111111" 
+        self.camera.background_color = "#111111" # Default Dark Mode
+        
         with open("temp_script.json", "r") as f:
             script_data = json.load(f)
 
-        # --- STEP 1: PARSE CONFIGURATION ---
-        # Defaults
+        # -- CONFIG --
         profile = {
             "BARRY": {"shape": "SQUARE", "color": "RED"},
             "CARL": {"shape": "CIRCLE", "color": "BLUE"}
         }
-
-        # Scan script for [CONFIG: NAME, SHAPE, COLOR]
+        
         for item in script_data:
-            text = item["text"].strip()
-            if text.startswith("[CONFIG:"):
-                # Clean format: [CONFIG: BARRY, TRIANGLE, GREEN] -> "BARRY, TRIANGLE, GREEN"
-                content = text.replace("[CONFIG:", "").replace("]", "")
-                parts = [p.strip().upper() for p in content.split(",")]
-                
+            t = item["text"].strip()
+            if t.startswith("[CONFIG:"):
+                parts = t.replace("[CONFIG:", "").replace("]", "").split(",")
                 if len(parts) >= 3:
-                    name, shape, color = parts[0], parts[1], parts[2]
-                    profile[name] = {"shape": shape, "color": color}
-                    print(f"[ACTION] Configured {name} as {color} {shape}")
+                    profile[parts[0].strip().upper()] = {
+                        "shape": parts[1].strip().upper(), 
+                        "color": parts[2].strip().upper()
+                    }
 
-        # --- STEP 2: BUILD ACTORS ---
-        barry = create_actor_shape(profile["BARRY"]["shape"], profile["BARRY"]["color"])
-        barry.shift(LEFT * 3)
-
-        carl = create_actor_shape(profile["CARL"]["shape"], profile["CARL"]["color"])
-        carl.shift(RIGHT * 3)
-
+        barry = create_actor(profile["BARRY"]["shape"], profile["BARRY"]["color"]).shift(LEFT*3)
+        carl = create_actor(profile["CARL"]["shape"], profile["CARL"]["color"]).shift(RIGHT*3)
         self.add(barry, carl)
 
-        # --- STEP 3: PLAY SCENE ---
+        # -- MAIN LOOP --
         for i, item in enumerate(script_data):
             speaker = item["speaker"].upper()
             text = item["text"]
-            
             clean_text = text.strip()
-            
-            # Skip Config lines so they don't break flow
-            if clean_text.startswith("[CONFIG:"):
+
+            # --- 1. SCENE HANDLER (COLOR MODE) ---
+            if clean_text.startswith("[SCENE:"):
+                scene_name = clean_text.replace("[SCENE:", "").replace("]", "").strip().upper()
+                print(f"[ACTION] Setting Background Color: {scene_name}")
+                
+                # Check Palette first
+                if scene_name in SCENE_PALETTE:
+                    self.camera.background_color = SCENE_PALETTE[scene_name]
+                else:
+                    # Try to use it as a raw Manim color (e.g., "BLUE", "RED")
+                    try:
+                        self.camera.background_color = get_manim_color(scene_name)
+                    except:
+                        # Fallback to Black if unknown
+                        self.camera.background_color = BLACK
                 continue
 
-            # SFX Handler
+            # Skip Config
+            if clean_text.startswith("[CONFIG:"): continue
+
+            # --- 2. SFX ---
             if clean_text.startswith("[") and clean_text.endswith("]"):
                 tag = clean_text[1:-1].upper()
                 if tag in SFX_MAP:
-                    filename, duration = SFX_MAP[tag]
-                    if filename and os.path.exists(filename): self.add_sound(filename)
-                    self.wait(duration)
-                    continue 
+                    fname, dur = SFX_MAP[tag]
+                    if os.path.exists(fname): self.add_sound(fname)
+                    self.wait(dur)
+                continue 
 
-            # Camera Move
+            # --- 3. ANIMATION ---
             target_frame = self.camera.frame
             if "BARRY" in speaker:
                 actor = barry
@@ -207,7 +208,6 @@ class FlatlandEpisode(MovingCameraScene):
                 actor = VGroup(barry, carl)
                 self.play(target_frame.animate.scale_to_fit_height(14).move_to(ORIGIN), run_time=0.5)
 
-            # Audio
             audio_path = os.path.join(AUDIO_DIR, f"line_{i}.wav")
             if os.path.exists(audio_path): self.add_sound(audio_path)
 
@@ -224,3 +224,4 @@ class FlatlandEpisode(MovingCameraScene):
 
 if __name__ == "__main__":
     sys.exit(0)
+    
